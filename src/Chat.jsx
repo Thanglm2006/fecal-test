@@ -11,6 +11,7 @@ const API_URL = 'https://api.job-fs.me/api';
 const MQTT_BROKER = 'wss://mqtt.job-fs.me';
 const AGORA_APP_ID = "b3631d59f31c43fab2da714ff9b9a79e";
 
+// Create client outside component to prevent re-creation on re-renders
 const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
 export default function Chat() {
@@ -22,7 +23,7 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [inputMsg, setInputMsg] = useState('');
 
-  // --- STATE CHO VIDEO CALL ---
+  // --- STATE FOR VIDEO CALL ---
   const [isInCall, setIsInCall] = useState(false);
 
   const messagesEndRef = useRef(null);
@@ -86,7 +87,7 @@ export default function Chat() {
         headers: { token: localStorage.getItem('token') }
       });
       setConversations(res.data);
-    } catch (error) { console.error("Lỗi load inbox:", error); }
+    } catch (error) { console.error("Error loading inbox:", error); }
   };
 
   const loadHistory = async (senderId, receiverId) => {
@@ -108,7 +109,7 @@ export default function Chat() {
       } else {
         setMessages([]);
       }
-    } catch (e) { console.error("Lỗi load history:", e); setMessages([]); }
+    } catch (e) { console.error("Error loading history:", e); setMessages([]); }
   };
 
   const sendMessage = async (type = 'text', content) => {
@@ -131,12 +132,13 @@ export default function Chat() {
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    alert("Tính năng upload ảnh cần backend API signature hoạt động.");
+    alert("Upload feature needs backend signature implementation.");
   };
 
+  // --- CALL HANDLERS ---
   const handleStartCall = () => {
     if (!selectedUser) return;
-    sendMessage('text', '📞 Đang bắt đầu cuộc gọi video...');
+    sendMessage('text', '📞 Starting video call...');
     setIsInCall(true);
   };
 
@@ -161,7 +163,6 @@ export default function Chat() {
     window.location.href = '/login';
   };
 
-  // --- MOBILE NAVIGATION HANDLER ---
   const handleBackToList = () => {
     setSelectedUser(null);
   };
@@ -171,13 +172,15 @@ export default function Chat() {
     <div className="flex bg-gray-100 relative overflow-hidden" style={{ height: '100dvh' }}>
 
       {/* --- VIDEO CALL OVERLAY --- */}
+      {/* We use AgoraRTCProvider here so the client context is available 
+         to the VideoRoom hooks.
+      */}
       {isInCall && selectedUser && (
-        <div className="absolute inset-0 z-[100]">
+        <div className="absolute inset-0 z-[100] bg-black">
           <AgoraRTCProvider client={agoraClient}>
             <VideoRoom
               appId={AGORA_APP_ID}
               channelName={getRoomId(currentUserId, selectedUser.userId)}
-              token={null}
               uid={currentUserId}
               onLeave={() => setIsInCall(false)}
             />
@@ -188,8 +191,8 @@ export default function Chat() {
       {/* SIDEBAR */}
       <div className={`w-full md:w-1/4 bg-white border-r flex-col ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
-          <h2 className="font-bold text-lg">Tin nhắn</h2>
-          <button onClick={handleLogout} className="hover:bg-blue-700 p-2 rounded-full transition-colors" aria-label="Đăng xuất">
+          <h2 className="font-bold text-lg">Messages</h2>
+          <button onClick={handleLogout} className="hover:bg-blue-700 p-2 rounded-full transition-colors" aria-label="Logout">
             <LogOut size={20} />
           </button>
         </div>
@@ -207,7 +210,7 @@ export default function Chat() {
               />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold truncate text-gray-800">{user.fullName}</p>
-                <p className="text-sm truncate text-gray-500">{user.lastMessage || "Chưa có tin nhắn"}</p>
+                <p className="text-sm truncate text-gray-500">{user.lastMessage || "No messages"}</p>
               </div>
             </div>
           ))}
@@ -224,7 +227,7 @@ export default function Chat() {
                 <button
                   onClick={handleBackToList}
                   className="md:hidden text-gray-600 hover:bg-gray-100 p-1 rounded-full transition-colors flex-shrink-0"
-                  aria-label="Quay lại danh sách"
+                  aria-label="Back"
                 >
                   <ArrowLeft size={24} />
                 </button>
@@ -235,13 +238,13 @@ export default function Chat() {
                 />
                 <div className="min-w-0">
                   <h3 className="font-bold text-gray-800 text-sm md:text-base truncate">{selectedUser.fullName}</h3>
-                  <span className="text-[10px] md:text-xs text-green-500 flex items-center">● Đang hoạt động</span>
+                  <span className="text-[10px] md:text-xs text-green-500 flex items-center">● Active Now</span>
                 </div>
               </div>
               <button
                 onClick={handleStartCall}
                 className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors flex-shrink-0"
-                aria-label="Bắt đầu cuộc gọi video"
+                aria-label="Video Call"
               >
                 <VideoIcon size={20} />
               </button>
@@ -259,7 +262,7 @@ export default function Chat() {
                 <div key={idx} className={`flex ${msg.myMessage ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] md:max-w-md p-3 shadow-md text-sm md:text-base ${msg.myMessage ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none'}`}>
                     {msg.fileUrl ? (
-                      <img src={msg.fileUrl} alt="Sent image" className="rounded-lg max-w-full" />
+                      <img src={msg.fileUrl} alt="Sent file" className="rounded-lg max-w-full" />
                     ) : (
                       msg.message
                     )}
@@ -281,7 +284,7 @@ export default function Chat() {
               <input
                 type="text"
                 className="flex-1 border border-gray-300 rounded-full px-4 py-2 md:py-3 text-sm md:text-base focus:outline-none focus:border-blue-500 min-w-0"
-                placeholder="Nhập tin nhắn..."
+                placeholder="Type a message..."
                 value={inputMsg}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage('text', inputMsg)}
                 onChange={(e) => setInputMsg(e.target.value)}
@@ -289,7 +292,7 @@ export default function Chat() {
               <button
                 onClick={() => sendMessage('text', inputMsg)}
                 className="bg-blue-600 text-white p-2 md:p-3 rounded-full hover:bg-blue-700 transition-colors flex-shrink-0"
-                aria-label="Gửi tin nhắn"
+                aria-label="Send"
               >
                 <Send size={18} />
               </button>
@@ -297,7 +300,7 @@ export default function Chat() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50 flex-col text-center text-gray-400 p-4">
-            <p>Chọn một người để bắt đầu trò chuyện</p>
+            <p>Select a conversation to start chatting</p>
           </div>
         )}
       </div>
