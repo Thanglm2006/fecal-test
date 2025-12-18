@@ -7,248 +7,127 @@ import {
   useLocalMicrophoneTrack,
   useLocalCameraTrack
 } from "agora-rtc-react";
-import { PhoneOff, Mic, MicOff, Video, VideoOff, RotateCcw } from "lucide-react";
+import { PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
 
 export const VideoRoom = ({
   appId, channelName, token, uid, onLeave
 }) => {
+  // --- 1. LOCAL TRACKS (Tự tạo track tại đây) ---
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
-  const [isLocalVideoLarge, setIsLocalVideoLarge] = useState(false); // Toggle để swap video
 
+  // Hook tạo track Audio & Video
   const { localMicrophoneTrack } = useLocalMicrophoneTrack(micOn);
   const { localCameraTrack } = useLocalCameraTrack(cameraOn);
 
+  // --- 2. JOIN & PUBLISH ---
   useJoin({ appid: appId, channel: channelName, token: token || null, uid }, true);
   usePublish([localMicrophoneTrack, localCameraTrack]);
 
   const remoteUsers = useRemoteUsers();
+
+  // Ref để hiển thị video local nếu cần custom (nhưng Agora SDK mới hỗ trợ LocalUser component, tuy nhiên dùng ref như bạn cũng ok)
   const localVideoRef = useRef(null);
 
-  // Fix Agora + Tailwind conflict:  Force styles after Agora renders
   useEffect(() => {
-    if (localCameraTrack && cameraOn && localVideoRef.current) {
+    if (localCameraTrack && cameraOn) {
       localCameraTrack.play(localVideoRef.current);
-
-      // Fix conflict: Override Agora's injected styles
-      const fixAgoraStyles = () => {
-        const videoElement = localVideoRef.current?.querySelector('video');
-        if (videoElement) {
-          videoElement.style.width = '100%';
-          videoElement.style.height = '100%';
-          videoElement.style.objectFit = 'cover';
-          videoElement.style.transform = 'rotateY(180deg)'; // Mirror effect
-        }
-      };
-
-      // Run immediately and after a short delay (Agora may inject styles async)
-      fixAgoraStyles();
-      const timeoutId = setTimeout(fixAgoraStyles, 100);
-      const intervalId = setInterval(fixAgoraStyles, 500); // Keep checking
-
-      return () => {
-        clearTimeout(timeoutId);
-        clearInterval(intervalId);
-        if (localCameraTrack) localCameraTrack.stop();
-      };
     }
+    return () => {
+      // Cleanup nếu cần thiết, track tự stop khi component unmount nhờ hook
+      if (localCameraTrack) localCameraTrack.stop();
+    };
   }, [localCameraTrack, cameraOn]);
 
-  // Fix remote video styles
-  useEffect(() => {
-    const fixRemoteStyles = () => {
-      document.querySelectorAll('[class*="agora"]').forEach(el => {
-        const video = el.querySelector('video');
-        if (video) {
-          video.style.width = '100%';
-          video.style.height = '100%';
-          video.style.objectFit = 'cover';
-        }
-      });
-    };
+  const toggleMic = () => {
+    setMicOn(prev => !prev);
+    // Lưu ý: hook useLocalMicrophoneTrack sẽ tự động mute/unmute dựa trên biến micOn truyền vào
+  };
 
-    const intervalId = setInterval(fixRemoteStyles, 500);
-    return () => clearInterval(intervalId);
-  }, [remoteUsers]);
-
-  const toggleMic = () => setMicOn(prev => !prev);
-  const toggleCamera = () => setCameraOn(prev => !prev);
-  const swapVideos = () => setIsLocalVideoLarge(prev => !prev);
-
-  const hasRemoteUser = remoteUsers.length > 0;
+  const toggleCamera = () => {
+    setCameraOn(prev => !prev);
+    // Tương tự, hook useLocalCameraTrack sẽ tự xử lý enable/disable
+  };
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black text-white flex flex-col h-[100dvh] w-full overflow-hidden">
 
-      {/* --- MAIN VIDEO AREA (Messenger Style:  Full screen + PIP) --- */}
-      <div className="flex-1 relative w-full h-full bg-gray-950 overflow-hidden">
+      {/* --- VIDEO GRID --- */}
+      <div className="flex-1 relative w-full h-full flex flex-col md:flex-row bg-gray-950">
 
-        {/* LARGE VIDEO (Full Screen) */}
-        <div className="absolute inset-0 w-full h-full">
-          {isLocalVideoLarge || !hasRemoteUser ? (
-            // Show LOCAL as large
-            <>
-              <div
-                ref={!isLocalVideoLarge || !hasRemoteUser ? localVideoRef : null}
-                className="w-full h-full bg-gray-900"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                }}
-              />
-              {!cameraOn && (
-                <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-                  <div className="text-center">
-                    <div className="w-24 h-24 md:w-32 md:h-32 bg-gray-800 rounded-full mx-auto flex items-center justify-center mb-3">
-                      <VideoOff size={40} className="text-gray-500" />
-                    </div>
-                    <p className="text-sm text-gray-400">Camera đang tắt</p>
-                  </div>
-                </div>
-              )}
-              {!hasRemoteUser && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                  <div className="text-center">
-                    <div className="w-20 h-20 md:w-24 md:h-24 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-lg font-medium">Đang kết nối...</p>
-                    <p className="text-sm text-gray-400 mt-1">Chờ đối phương tham gia</p>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            // Show REMOTE as large
-            <div className="w-full h-full">
+        {/* REMOTE USER SECTION (Đối phương) */}
+        <div className="relative flex-1 border-b md:border-b-0 md:border-r border-white/10 overflow-hidden">
+          {remoteUsers.length > 0 ? (
+            <div className="absolute inset-0 w-full h-full">
               <RemoteUser
                 user={remoteUsers[0]}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  position: 'absolute',
-                  inset: 0,
-                }}
+                className="w-full h-full object-cover"
+                style={{ width: '100%', height: '100%' }} // Style cứng để đảm bảo full
               />
-              <div className="absolute top-4 left-4 z-20 bg-black/50 px-3 py-1.5 rounded-full text-sm backdrop-blur-md flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                Đang kết nối
+              <div className="absolute bottom-4 left-4 z-20 bg-black/40 px-3 py-1 rounded-full text-sm backdrop-blur-md">
+                Đối phương
               </div>
+            </div>
+          ) : (
+            <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4">
+              <div className="w-20 h-20 bg-gray-800 rounded-full animate-pulse flex items-center justify-center">
+                <Video size={32} className="text-gray-600" />
+              </div>
+              <p className="text-gray-400 text-sm font-medium">Đang chờ đối phương...</p>
             </div>
           )}
         </div>
 
-        {/* SMALL VIDEO (Picture-in-Picture - Messenger Style) */}
-        {hasRemoteUser && (
+        {/* LOCAL USER SECTION (Bạn) */}
+        <div className="relative flex-1 overflow-hidden">
+          {/* Video Container */}
           <div
-            onClick={swapVideos}
-            className="absolute top-4 right-4 z-30 w-28 h-40 sm:w-32 sm:h-44 md:w-40 md:h-56 
-                       rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20 
-                       cursor-pointer hover:border-white/40 transition-all duration-200
-                       hover:scale-105 active:scale-95"
-          >
-            {isLocalVideoLarge ? (
-              // Show REMOTE as small
-              <RemoteUser
-                user={remoteUsers[0]}
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                }}
-              />
-            ) : (
-              // Show LOCAL as small (default Messenger behavior)
-              <>
-                <div
-                  ref={localVideoRef}
-                  className="w-full h-full bg-gray-800"
-                  style={{ position: 'absolute', inset: 0 }}
-                />
-                {!cameraOn && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
-                    <VideoOff size={24} className="text-gray-500" />
-                  </div>
-                )}
-              </>
-            )}
+            ref={localVideoRef}
+            className="absolute inset-0 w-full h-full"
+            style={{ transform: 'rotateY(180deg)', objectFit: 'cover' }}
+          />
 
-            {/* Swap indicator */}
-            <div className="absolute bottom-2 right-2 bg-black/50 p-1. 5 rounded-full backdrop-blur-sm">
-              <RotateCcw size={14} />
+          {/* Fallback khi tắt camera */}
+          {!cameraOn && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto flex items-center justify-center mb-2">
+                  <VideoOff className="text-gray-500" />
+                </div>
+                <p className="text-xs text-gray-500">Camera đang tắt</p>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Call duration timer (Optional - Messenger style) */}
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-black/50 px-4 py-1.5 rounded-full text-sm backdrop-blur-md">
-          <CallTimer />
+          <div className="absolute bottom-4 left-4 z-20 bg-black/40 px-3 py-1 rounded-full text-sm backdrop-blur-md">
+            Bạn {micOn ? '' : '(Tắt mic)'}
+          </div>
         </div>
       </div>
 
-      {/* --- CONTROLS (Messenger Style - Bottom floating) --- */}
-      <div className="absolute bottom-0 left-0 right-0 z-40">
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent pointer-events-none"
-          style={{ height: '150%', bottom: 0, top: 'auto' }} />
+      {/* --- CONTROLS --- */}
+      <div className="h-24 md:h-28 bg-gray-900/90 backdrop-blur-xl border-t border-white/5 flex items-center justify-center gap-6 md:gap-10 px-6 safe-area-bottom pb-safe">
+        <button
+          onClick={toggleMic}
+          className={`p-4 md:p-5 rounded-full transition-all active:scale-90 ${micOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+        >
+          {micOn ? <Mic size={24} /> : <MicOff size={24} />}
+        </button>
 
-        <div className="relative px-6 pb-8 pt-6 md:pb-10 md: pt-8 flex items-center justify-center gap-4 md:gap-6"
-          style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom))' }}>
+        <button
+          onClick={onLeave}
+          className="p-5 md:p-6 rounded-full bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/30 transition-all active:scale-95"
+        >
+          <PhoneOff size={32} fill="currentColor" />
+        </button>
 
-          {/* Mute button */}
-          <button
-            onClick={toggleMic}
-            className={`p-4 md:p-5 rounded-full transition-all duration-200 active:scale-90 
-                       ${micOn
-                ? 'bg-white/20 hover: bg-white/30 backdrop-blur-md'
-                : 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/30'}`}
-            aria-label={micOn ? 'Tắt mic' : 'Bật mic'}
-          >
-            {micOn ? <Mic size={22} /> : <MicOff size={22} />}
-          </button>
-
-          {/* End call button */}
-          <button
-            onClick={onLeave}
-            className="p-5 md:p-6 rounded-full bg-red-600 hover:bg-red-700 
-                       shadow-xl shadow-red-600/40 transition-all duration-200 
-                       active:scale-95 hover: scale-105"
-            aria-label="Kết thúc cuộc gọi"
-          >
-            <PhoneOff size={28} fill="currentColor" />
-          </button>
-
-          {/* Camera toggle button */}
-          <button
-            onClick={toggleCamera}
-            className={`p-4 md:p-5 rounded-full transition-all duration-200 active:scale-90 
-                       ${cameraOn
-                ? 'bg-white/20 hover:bg-white/30 backdrop-blur-md'
-                : 'bg-red-500 hover: bg-red-600 shadow-lg shadow-red-500/30'}`}
-            aria-label={cameraOn ? 'Tắt camera' : 'Bật camera'}
-          >
-            {cameraOn ? <Video size={22} /> : <VideoOff size={22} />}
-          </button>
-        </div>
+        <button
+          onClick={toggleCamera}
+          className={`p-4 md:p-5 rounded-full transition-all active:scale-90 ${cameraOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+        >
+          {cameraOn ? <Video size={24} /> : <VideoOff size={24} />}
+        </button>
       </div>
     </div>
   );
-};
-
-// Simple call timer component
-const CallTimer = () => {
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSeconds(s => s + 1);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const formatTime = (totalSeconds) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  return <span className="font-mono">{formatTime(seconds)}</span>;
 };
