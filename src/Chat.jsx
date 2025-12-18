@@ -7,14 +7,18 @@ import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft } from 
 import AgoraRTC, { AgoraRTCProvider } from "agora-rtc-react";
 import { VideoRoom } from "./VideoRoom";
 
-const API_URL = 'https://api.job-fs.me/api';
-const MQTT_BROKER = 'wss://mqtt.job-fs.me';
+const API_URL = 'http://localhost:8080/api';
+const MQTT_BROKER = 'ws://localhost:9001';
 const AGORA_APP_ID = "b3631d59f31c43fab2da714ff9b9a79e";
 
 const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
 export default function Chat() {
-  const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem('userId'));
+  const [currentUserId, setCurrentUserId] = useState(() => {
+    // Lấy ID an toàn từ object user
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u).id : null;
+  });
 
   const [client, setClient] = useState(null);
   const [conversations, setConversations] = useState([]);
@@ -82,7 +86,7 @@ export default function Chat() {
   // --- API CALLS ---
   const fetchInbox = async (myId) => {
     try {
-      const res = await axios.get(`${API_URL}/chat/conversations?userId=${myId}`, {
+      const res = await axios.get(`${API_URL}/chat/inbox/${myId}`, {
         headers: { token: localStorage.getItem('token') }
       });
       setConversations(res.data);
@@ -92,19 +96,19 @@ export default function Chat() {
   const loadHistory = async (senderId, receiverId) => {
     try {
       const res = await axios.get(`${API_URL}/chat/messages`, {
-        params: { senderId: senderId, receiverId: receiverId, page: 0 },
+        params: { user1: senderId, user2: receiverId, page: 0 },
         headers: { token: localStorage.getItem('token') }
       });
 
       if (res.data.data && Array.isArray(res.data.data)) {
         const uiMessages = res.data.data.map(apiMsg => ({
           message: apiMsg.content,
-          myMessage: String(apiMsg.senderId || apiMsg.sender) === String(senderId) || apiMsg.sent === true,
+          myMessage: apiMsg.sent, // Backend trả về sent: true/false
           fileUrl: apiMsg.fileUrl,
           timestamp: apiMsg.timestamp,
           type: apiMsg.type
         }));
-        setMessages(uiMessages.reverse());
+        setMessages(uiMessages.reverse()); // Đảo ngược nếu API trả mới nhất trước
       } else {
         setMessages([]);
       }
@@ -129,10 +133,24 @@ export default function Chat() {
   };
 
   const handleFileUpload = async (e) => {
-    // Logic upload ảnh giữ nguyên
     const file = e.target.files[0];
     if (!file) return;
-    alert("Tính năng upload ảnh cần backend API signature hoạt động.");
+
+    try {
+      const token = localStorage.getItem('token');
+      const sigRes = await axios.get(`${API_URL}/chat/signature`, { headers: { token } });
+      const { signature, timestamp, api_key, cloud_name, folder } = sigRes.data;
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('api_key', api_key);
+      formData.append('timestamp', timestamp);
+      formData.append('signature', signature);
+      formData.append('folder', folder);
+
+      const cloudRes = await axios.post(`https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`, formData);
+      sendMessage('image', cloudRes.data.secure_url);
+    } catch (err) { alert("Lỗi upload ảnh: " + err.message); }
   };
 
   const handleStartCall = () => {
@@ -171,9 +189,11 @@ export default function Chat() {
   return (
     <div className="flex h-[100dvh] bg-gray-100 relative overflow-hidden">
 
-      {/* --- VIDEO CALL OVERLAY --- */}
+      {/* --- VIDEO CALL OVERLAY --- 
+          z-[100] đảm bảo nó đè lên tất cả mọi thứ kể cả sidebar
+      */}
       {isInCall && selectedUser && (
-        <div className="absolute inset-0 z-[100]">
+        <div className="absolute inset-0 z-[100] w-full h-full bg-black">
           <AgoraRTCProvider client={agoraClient}>
             <VideoRoom
               appId={AGORA_APP_ID}
@@ -191,7 +211,7 @@ export default function Chat() {
          - Desktop: Luôn hiện (`md:flex`) và chiếm 1/4 (`md:w-1/4`)
       */}
       <div className={`w-full md:w-1/4 bg-white border-r flex-col ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
-        <div className="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
+        <div className="p-4 border-b bg-blue-600 text-white flex justify-between items-center h-16 shrink-0">
           <h2 className="font-bold text-lg">Tin nhắn</h2>
           <button onClick={handleLogout}><LogOut size={20} /></button>
         </div>
@@ -220,7 +240,7 @@ export default function Chat() {
         {selectedUser ? (
           <>
             {/* Header Chat */}
-            <div className="p-3 md:p-4 bg-white border-b flex items-center shadow-sm justify-between sticky top-0 z-10">
+            <div className="p-3 md:p-4 bg-white border-b flex items-center shadow-sm justify-between sticky top-0 z-10 h-16 shrink-0">
               <div className="flex items-center gap-3">
                 {/* Back Button (Mobile Only) */}
                 <button onClick={handleBackToList} className="md:hidden text-gray-600 hover:bg-gray-100 p-1 rounded-full">
@@ -265,7 +285,7 @@ export default function Chat() {
             </div>
 
             {/* Input */}
-            <div className="p-3 md:p-4 bg-white border-t flex items-center gap-2 md:gap-3 sticky bottom-0">
+            <div className="p-3 md:p-4 bg-white border-t flex items-center gap-2 md:gap-3 sticky bottom-0 shrink-0 safe-area-bottom">
               <label className="cursor-pointer p-2 hover:bg-gray-100 rounded-full text-blue-600">
                 <ImageIcon size={20} />
                 <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />

@@ -106,7 +106,7 @@ export const VideoRoom = ({ appId, channelName, token, uid, onLeave }) => {
       </div>
 
       {/* FOOTER CONTROL BAR (Chuẩn Google Meet) */}
-      <div className="h-20 bg-[#202124] flex justify-center items-center gap-4 md:gap-6 pb-4 md:pb-0">
+      <div className="h-20 bg-[#202124] flex justify-center items-center gap-4 md:gap-6 pb-4 md:pb-0 safe-area-bottom">
 
         {/* Mic Toggle */}
         <button
