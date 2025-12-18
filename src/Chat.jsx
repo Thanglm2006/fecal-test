@@ -7,8 +7,8 @@ import { Send, Image as ImageIcon, LogOut, Video as VideoIcon } from 'lucide-rea
 import AgoraRTC, { AgoraRTCProvider } from "agora-rtc-react";
 import { VideoRoom } from "./VideoRoom";
 
-const API_URL = 'http://localhost:8080/api';
-const MQTT_BROKER = 'ws://localhost:9001';
+const API_URL = 'https://api.job-fs.me/api';
+const MQTT_BROKER = 'wss://api.job-fs.me';
 const AGORA_APP_ID = "b3631d59f31c43fab2da714ff9b9a79e"; // <--- ĐIỀN APP ID CỦA BẠN VÀO ĐÂY
 
 // Tạo Client Agora ở ngoài component để tránh re-create

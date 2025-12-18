@@ -10,7 +10,7 @@ export default function Login() {
     try {
       // Giả sử API login của bạn là /api/auth/login/employer hoặc applicant
       // Ở đây test nhanh mình gọi login Employer
-      const res = await axios.post('http://localhost:8080/api/auth/login/employer', {
+      const res = await axios.post('https://api.job-fs.me/api/auth/login/employer', {
         email,
         password
       });
@@ -30,7 +30,7 @@ export default function Login() {
     try {
       // Giả sử API login của bạn là /api/auth/login/employer hoặc applicant
       // Ở đây test nhanh mình gọi login Employer
-      const res = await axios.post('http://localhost:8080/api/auth/login/applicant', {
+      const res = await axios.post('https://api.job-fs.me/api/auth/login/applicant', {
         email,
         password
       });
