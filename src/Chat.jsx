@@ -9,9 +9,9 @@ import { VideoRoom } from "./VideoRoom";
 
 const API_URL = 'https://api.job-fs.me/api';
 const MQTT_BROKER = 'wss://mqtt.job-fs.me';
-const AGORA_APP_ID = "b3631d59f31c43fab2da714ff9b9a79e";
+const AGORA_APP_ID = "b3631d59f31c43fab2da714ff9b9a79e"; // Replace with your actual App ID if dynamic
 
-// Create client outside component to prevent re-creation on re-renders
+// Initialize client outside component to prevent recreation
 const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
 export default function Chat() {
@@ -65,8 +65,9 @@ export default function Chat() {
 
   useEffect(() => {
     if (!selectedUser || !client || !currentUserId) return;
-    const roomId = getRoomId(currentUserId, selectedUser.userId);
-    const topic = `/chat/${roomId}`;
+    // Chat room ID logic (can differ from video channel logic if needed, but keeping consistent is good)
+    const roomId = getChannelName(currentUserId, selectedUser.userId);
+    const topic = `/chat/${roomId}`; // Assuming chat uses same ID format, otherwise revert to old chat logic
 
     client.subscribe(topic);
     loadHistory(currentUserId, selectedUser.userId);
@@ -80,6 +81,14 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // --- HELPER: Deterministic Channel Name ---
+  // Sorts UIDs numerically: 5 and 12 -> "5_12"
+  const getChannelName = (uid1, uid2) => {
+    const u1 = parseInt(uid1, 10);
+    const u2 = parseInt(uid2, 10);
+    return u1 < u2 ? `${u1}_${u2}` : `${u2}_${u1}`;
+  };
+
   // --- API CALLS ---
   const fetchInbox = async (myId) => {
     try {
@@ -87,7 +96,7 @@ export default function Chat() {
         headers: { token: localStorage.getItem('token') }
       });
       setConversations(res.data);
-    } catch (error) { console.error("Error loading inbox:", error); }
+    } catch (error) { console.error("Error load inbox:", error); }
   };
 
   const loadHistory = async (senderId, receiverId) => {
@@ -109,7 +118,7 @@ export default function Chat() {
       } else {
         setMessages([]);
       }
-    } catch (e) { console.error("Error loading history:", e); setMessages([]); }
+    } catch (e) { console.error("Error load history:", e); setMessages([]); }
   };
 
   const sendMessage = async (type = 'text', content) => {
@@ -124,7 +133,9 @@ export default function Chat() {
       content: content,
       timestamp: new Date().toISOString()
     };
-    const roomId = getRoomId(currentUserId, selectedUser.userId);
+
+    // Use the same channel logic for chat topic
+    const roomId = getChannelName(currentUserId, selectedUser.userId);
     client.publish(`/chat/${roomId}`, JSON.stringify(payload));
     if (type === 'text') setInputMsg('');
   };
@@ -132,20 +143,15 @@ export default function Chat() {
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    alert("Upload feature needs backend signature implementation.");
+    alert("Upload feature needs backend API signature.");
   };
 
-  // --- CALL HANDLERS ---
+  // --- CALL HANDLER ---
   const handleStartCall = () => {
     if (!selectedUser) return;
+    // Optional: Send a text message notifying the user
     sendMessage('text', '📞 Starting video call...');
     setIsInCall(true);
-  };
-
-  const getRoomId = (uid1, uid2) => {
-    const id1 = String(uid1);
-    const id2 = String(uid2);
-    return id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
   };
 
   const mapMqttMessageToUI = (mqttData, myId) => {
@@ -172,15 +178,13 @@ export default function Chat() {
     <div className="flex bg-gray-100 relative overflow-hidden" style={{ height: '100dvh' }}>
 
       {/* --- VIDEO CALL OVERLAY --- */}
-      {/* We use AgoraRTCProvider here so the client context is available 
-         to the VideoRoom hooks.
-      */}
       {isInCall && selectedUser && (
         <div className="absolute inset-0 z-[100] bg-black">
           <AgoraRTCProvider client={agoraClient}>
             <VideoRoom
               appId={AGORA_APP_ID}
-              channelName={getRoomId(currentUserId, selectedUser.userId)}
+              // Generate the sorted channel name: "5_12"
+              channelName={getChannelName(currentUserId, selectedUser.userId)}
               uid={currentUserId}
               onLeave={() => setIsInCall(false)}
             />
@@ -238,13 +242,13 @@ export default function Chat() {
                 />
                 <div className="min-w-0">
                   <h3 className="font-bold text-gray-800 text-sm md:text-base truncate">{selectedUser.fullName}</h3>
-                  <span className="text-[10px] md:text-xs text-green-500 flex items-center">● Active Now</span>
+                  <span className="text-[10px] md:text-xs text-green-500 flex items-center">● Active</span>
                 </div>
               </div>
               <button
                 onClick={handleStartCall}
                 className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors flex-shrink-0"
-                aria-label="Video Call"
+                aria-label="Start Video Call"
               >
                 <VideoIcon size={20} />
               </button>
@@ -300,7 +304,7 @@ export default function Chat() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-gray-50 flex-col text-center text-gray-400 p-4">
-            <p>Select a conversation to start chatting</p>
+            <p>Select a user to chat</p>
           </div>
         )}
       </div>
