@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import mqtt from 'mqtt';
 import axios from 'axios';
-import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft } from 'lucide-react'; // Import ArrowLeft
+import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft } from 'lucide-react';
 
 // --- AGORA IMPORTS ---
 import AgoraRTC, { AgoraRTCProvider } from "agora-rtc-react";
@@ -129,7 +129,6 @@ export default function Chat() {
   };
 
   const handleFileUpload = async (e) => {
-    // Logic upload ảnh giữ nguyên
     const file = e.target.files[0];
     if (!file) return;
     alert("Tính năng upload ảnh cần backend API signature hoạt động.");
@@ -169,17 +168,16 @@ export default function Chat() {
 
   // --- RENDER ---
   return (
-    <div className="flex h-[100dvh] bg-gray-100 relative overflow-hidden">
+    <div className="flex bg-gray-100 relative overflow-hidden" style={{ height: '100dvh' }}>
 
       {/* --- VIDEO CALL OVERLAY --- */}
-      {/* Quan trọng: Khi isInCall = true thì VideoRoom sẽ được mount và tự bật camera */}
       {isInCall && selectedUser && (
         <div className="absolute inset-0 z-[100]">
           <AgoraRTCProvider client={agoraClient}>
             <VideoRoom
               appId={AGORA_APP_ID}
               channelName={getRoomId(currentUserId, selectedUser.userId)}
-              token={null} // Nếu chạy prod cần server tạo token
+              token={null}
               uid={currentUserId}
               onLeave={() => setIsInCall(false)}
             />
@@ -189,20 +187,24 @@ export default function Chat() {
 
       {/* SIDEBAR */}
       <div className={`w-full md:w-1/4 bg-white border-r flex-col ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
-        {/* ... (Code sidebar giữ nguyên) */}
         <div className="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
           <h2 className="font-bold text-lg">Tin nhắn</h2>
-          <button onClick={handleLogout}><LogOut size={20} /></button>
+          <button onClick={handleLogout} className="hover:bg-blue-700 p-2 rounded-full transition-colors" aria-label="Đăng xuất">
+            <LogOut size={20} />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto">
           {conversations.map((user) => (
-            // ... code map giữ nguyên
             <div
               key={user.userId}
               onClick={() => setSelectedUser(user)}
-              className={`p-3 flex items-center cursor-pointer hover:bg-gray-100 border-b border-gray-100 ${selectedUser?.userId === user.userId ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
+              className={`p-3 flex items-center cursor-pointer hover:bg-gray-100 border-b border-gray-100 transition-colors ${selectedUser?.userId === user.userId ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
             >
-              <img src={user.avatarUrl || 'https://via.placeholder.com/40'} className="w-12 h-12 rounded-full mr-3 object-cover" />
+              <img
+                src={user.avatarUrl || 'https://via.placeholder.com/40'}
+                alt={user.fullName}
+                className="w-12 h-12 rounded-full mr-3 object-cover"
+              />
               <div className="flex-1 min-w-0">
                 <p className="font-semibold truncate text-gray-800">{user.fullName}</p>
                 <p className="text-sm truncate text-gray-500">{user.lastMessage || "Chưa có tin nhắn"}</p>
@@ -217,55 +219,78 @@ export default function Chat() {
         {selectedUser ? (
           <>
             {/* Header Chat */}
-            <div className="p-3 md:p-4 bg-white border-b flex items-center shadow-sm justify-between sticky top-0 z-10">
-              {/* ... (Code Header giữ nguyên) */}
-              <div className="flex items-center gap-3">
-                <button onClick={handleBackToList} className="md:hidden text-gray-600 hover:bg-gray-100 p-1 rounded-full">
+            <div className="p-3 md:p-4 bg-white border-b flex items-center shadow-sm justify-between flex-shrink-0">
+              <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                <button
+                  onClick={handleBackToList}
+                  className="md:hidden text-gray-600 hover:bg-gray-100 p-1 rounded-full transition-colors flex-shrink-0"
+                  aria-label="Quay lại danh sách"
+                >
                   <ArrowLeft size={24} />
                 </button>
-                <img src={selectedUser.avatarUrl || 'https://via.placeholder.com/40'} className="w-10 h-10 rounded-full object-cover" />
-                <div>
-                  <h3 className="font-bold text-gray-800 text-sm md:text-base">{selectedUser.fullName}</h3>
+                <img
+                  src={selectedUser.avatarUrl || 'https://via.placeholder.com/40'}
+                  alt={selectedUser.fullName}
+                  className="w-10 h-10 rounded-full object-cover flex-shrink-0"
+                />
+                <div className="min-w-0">
+                  <h3 className="font-bold text-gray-800 text-sm md:text-base truncate">{selectedUser.fullName}</h3>
                   <span className="text-[10px] md:text-xs text-green-500 flex items-center">● Đang hoạt động</span>
                 </div>
               </div>
               <button
                 onClick={handleStartCall}
-                className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition"
+                className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition-colors flex-shrink-0"
+                aria-label="Bắt đầu cuộc gọi video"
               >
                 <VideoIcon size={20} />
               </button>
             </div>
 
             {/* Message List */}
-            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
-              {/* ... (Code render tin nhắn giữ nguyên) */}
+            <div
+              className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4"
+              style={{
+                backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
+                backgroundRepeat: 'repeat'
+              }}
+            >
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.myMessage ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] md:max-w-md p-3 shadow-md text-sm md:text-base ${msg.myMessage ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none'}`}>
-                    {/* Logic render ảnh/text giữ nguyên */}
-                    {msg.message}
+                    {msg.fileUrl ? (
+                      <img src={msg.fileUrl} alt="Sent image" className="rounded-lg max-w-full" />
+                    ) : (
+                      msg.message
+                    )}
                   </div>
                 </div>
               ))}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input - Fix Responsive: Thêm pb-safe để tránh thanh gạch ngang iPhone */}
-            <div className="p-3 md:p-4 bg-white border-t flex items-center gap-2 md:gap-3 sticky bottom-0 safe-area-bottom pb-safe">
-              <label className="cursor-pointer p-2 hover:bg-gray-100 rounded-full text-blue-600">
+            {/* Input */}
+            <div
+              className="p-3 md:p-4 bg-white border-t flex items-center gap-2 md:gap-3 flex-shrink-0"
+              style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+            >
+              <label className="cursor-pointer p-2 hover:bg-gray-100 rounded-full text-blue-600 transition-colors flex-shrink-0">
                 <ImageIcon size={20} />
                 <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
               </label>
               <input
                 type="text"
-                className="flex-1 border border-gray-300 rounded-full pl-4 pr-4 py-2 md:py-3 text-sm md:text-base focus:outline-none focus:border-blue-500"
+                className="flex-1 border border-gray-300 rounded-full px-4 py-2 md:py-3 text-sm md:text-base focus:outline-none focus:border-blue-500 min-w-0"
                 placeholder="Nhập tin nhắn..."
                 value={inputMsg}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage('text', inputMsg)}
                 onChange={(e) => setInputMsg(e.target.value)}
               />
-              <button onClick={() => sendMessage('text', inputMsg)} className="bg-blue-600 text-white p-2 md:p-3 rounded-full hover:bg-blue-700">
+              <button
+                onClick={() => sendMessage('text', inputMsg)}
+                className="bg-blue-600 text-white p-2 md:p-3 rounded-full hover:bg-blue-700 transition-colors flex-shrink-0"
+                aria-label="Gửi tin nhắn"
+              >
                 <Send size={18} />
               </button>
             </div>

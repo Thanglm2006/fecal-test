@@ -12,7 +12,7 @@ import { PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
 export const VideoRoom = ({
   appId, channelName, token, uid, onLeave
 }) => {
-  // --- 1. LOCAL TRACKS (Tự tạo track tại đây) ---
+  // --- 1. LOCAL TRACKS ---
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
 
@@ -26,106 +26,114 @@ export const VideoRoom = ({
 
   const remoteUsers = useRemoteUsers();
 
-  // Ref để hiển thị video local nếu cần custom (nhưng Agora SDK mới hỗ trợ LocalUser component, tuy nhiên dùng ref như bạn cũng ok)
+  // Ref để hiển thị video local
   const localVideoRef = useRef(null);
 
   useEffect(() => {
-    if (localCameraTrack && cameraOn) {
+    if (localCameraTrack && cameraOn && localVideoRef.current) {
       localCameraTrack.play(localVideoRef.current);
     }
     return () => {
-      // Cleanup nếu cần thiết, track tự stop khi component unmount nhờ hook
-      if (localCameraTrack) localCameraTrack.stop();
+      if (localCameraTrack) {
+        localCameraTrack.stop();
+      }
     };
   }, [localCameraTrack, cameraOn]);
 
   const toggleMic = () => {
     setMicOn(prev => !prev);
-    // Lưu ý: hook useLocalMicrophoneTrack sẽ tự động mute/unmute dựa trên biến micOn truyền vào
   };
 
   const toggleCamera = () => {
     setCameraOn(prev => !prev);
-    // Tương tự, hook useLocalCameraTrack sẽ tự xử lý enable/disable
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black text-white flex flex-col h-[100dvh] w-full overflow-hidden">
+    <div className="fixed inset-0 z-[9999] bg-black text-white flex flex-col w-full overflow-hidden" style={{ height: '100dvh' }}>
 
       {/* --- VIDEO GRID --- */}
-      <div className="flex-1 relative w-full h-full flex flex-col md:flex-row bg-gray-950">
+      <div className="flex-1 relative w-full flex flex-col md:grid md:grid-cols-2 bg-gray-950 overflow-hidden">
 
         {/* REMOTE USER SECTION (Đối phương) */}
-        <div className="relative flex-1 border-b md:border-b-0 md:border-r border-white/10 overflow-hidden">
+        <div className="relative flex-1 md:flex-none overflow-hidden bg-gray-900">
           {remoteUsers.length > 0 ? (
             <div className="absolute inset-0 w-full h-full">
               <RemoteUser
                 user={remoteUsers[0]}
-                className="w-full h-full object-cover"
-                style={{ width: '100%', height: '100%' }} // Style cứng để đảm bảo full
+                playVideo={true}
+                playAudio={true}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
-              <div className="absolute bottom-4 left-4 z-20 bg-black/40 px-3 py-1 rounded-full text-sm backdrop-blur-md">
+              <div className="absolute bottom-4 left-4 z-20 bg-black/60 px-3 py-1.5 rounded-full text-xs md:text-sm backdrop-blur-md">
                 Đối phương
               </div>
             </div>
           ) : (
             <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4">
-              <div className="w-20 h-20 bg-gray-800 rounded-full animate-pulse flex items-center justify-center">
+              <div className="w-16 h-16 md:w-20 md:h-20 bg-gray-800 rounded-full animate-pulse flex items-center justify-center">
                 <Video size={32} className="text-gray-600" />
               </div>
-              <p className="text-gray-400 text-sm font-medium">Đang chờ đối phương...</p>
+              <p className="text-gray-400 text-xs md:text-sm font-medium">Đang chờ đối phương...</p>
             </div>
           )}
         </div>
 
         {/* LOCAL USER SECTION (Bạn) */}
-        <div className="relative flex-1 overflow-hidden">
+        <div className="relative flex-1 md:flex-none overflow-hidden bg-gray-900">
           {/* Video Container */}
-          <div
-            ref={localVideoRef}
-            className="absolute inset-0 w-full h-full"
-            style={{ transform: 'rotateY(180deg)', objectFit: 'cover' }}
-          />
+          {cameraOn && (
+            <div
+              ref={localVideoRef}
+              className="absolute inset-0 w-full h-full"
+              style={{
+                transform: 'scaleX(-1)', // Mirror effect
+                objectFit: 'cover'
+              }}
+            />
+          )}
 
           {/* Fallback khi tắt camera */}
           {!cameraOn && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900">
               <div className="text-center">
-                <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto flex items-center justify-center mb-2">
-                  <VideoOff className="text-gray-500" />
+                <div className="w-16 h-16 md:w-20 md:h-20 bg-gray-800 rounded-full mx-auto flex items-center justify-center mb-2">
+                  <VideoOff size={28} className="text-gray-500" />
                 </div>
-                <p className="text-xs text-gray-500">Camera đang tắt</p>
+                <p className="text-xs md:text-sm text-gray-500">Camera đang tắt</p>
               </div>
             </div>
           )}
 
-          <div className="absolute bottom-4 left-4 z-20 bg-black/40 px-3 py-1 rounded-full text-sm backdrop-blur-md">
-            Bạn {micOn ? '' : '(Tắt mic)'}
+          <div className="absolute bottom-4 left-4 z-20 bg-black/60 px-3 py-1.5 rounded-full text-xs md:text-sm backdrop-blur-md">
+            Bạn {!micOn && '(Tắt mic)'}
           </div>
         </div>
       </div>
 
       {/* --- CONTROLS --- */}
-      <div className="h-24 md:h-28 bg-gray-900/90 backdrop-blur-xl border-t border-white/5 flex items-center justify-center gap-6 md:gap-10 px-6 safe-area-bottom pb-safe">
+      <div className="flex-shrink-0 bg-gray-900/95 backdrop-blur-xl border-t border-white/5 flex items-center justify-center gap-4 md:gap-8 px-4 py-4 md:py-6" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
         <button
           onClick={toggleMic}
-          className={`p-4 md:p-5 rounded-full transition-all active:scale-90 ${micOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+          className={`p-3 md:p-4 rounded-full transition-all active:scale-90 touch-manipulation ${micOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+          aria-label={micOn ? "Tắt micro" : "Bật micro"}
         >
-          {micOn ? <Mic size={24} /> : <MicOff size={24} />}
+          {micOn ? <Mic size={20} className="md:w-6 md:h-6" /> : <MicOff size={20} className="md:w-6 md:h-6" />}
         </button>
 
         <button
           onClick={onLeave}
-          className="p-5 md:p-6 rounded-full bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/30 transition-all active:scale-95"
+          className="p-4 md:p-5 rounded-full bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/30 transition-all active:scale-95 touch-manipulation"
+          aria-label="Kết thúc cuộc gọi"
         >
-          <PhoneOff size={32} fill="currentColor" />
+          <PhoneOff size={24} className="md:w-8 md:h-8" fill="currentColor" />
         </button>
 
         <button
           onClick={toggleCamera}
-          className={`p-4 md:p-5 rounded-full transition-all active:scale-90 ${cameraOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+          className={`p-3 md:p-4 rounded-full transition-all active:scale-90 touch-manipulation ${cameraOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+          aria-label={cameraOn ? "Tắt camera" : "Bật camera"}
         >
-          {cameraOn ? <Video size={24} /> : <VideoOff size={24} />}
+          {cameraOn ? <Video size={20} className="md:w-6 md:h-6" /> : <VideoOff size={20} className="md:w-6 md:h-6" />}
         </button>
       </div>
     </div>
