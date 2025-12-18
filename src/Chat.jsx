@@ -82,7 +82,7 @@ export default function Chat() {
 
   const fetchInbox = async (id) => {
     try {
-      const res = await axios.get(`${API_URL}/chat/inbox/${id}`, { headers: { token: localStorage.getItem('token') } });
+      const res = await axios.get(`${API_URL}/chat/conversations?userId=${id}`, { headers: { token: localStorage.getItem('token') } });
       setConversations(res.data);
     } catch (e) { console.error(e); }
   };
@@ -90,7 +90,7 @@ export default function Chat() {
   const loadHistory = async (u1, u2) => {
     try {
       const res = await axios.get(`${API_URL}/chat/messages`, {
-        params: { user1: u1, user2: u2, page: 0 },
+        params: { senderId: u1, receiverId: u2, page: 0 },
         headers: { token: localStorage.getItem('token') }
       });
       if (res.data.data) setMessages(res.data.data.map(m => mapMsg(m, u1)).reverse());
