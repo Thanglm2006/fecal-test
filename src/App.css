@@ -1,1 +1,88 @@
+/* --- AGORA VIDEO LAYOUT (Plain CSS) --- */
 
+/* ROOT CONTAINER */
+.interview-container {
+    width: 100vw;
+    height: 100dvh;
+    background-color: #000;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+}
+
+/* REMOTE VIDEO (Interviewee) */
+.remote-video-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* LOCAL VIDEO (Self-view) */
+.local-video-wrapper {
+    position: absolute;
+    z-index: 50;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background-color: #222;
+    transition: all 0.3s ease;
+}
+
+/* --- RESPONSIVE LOGIC --- */
+
+/* MOBILE (< 768px): Fullscreen Remote + Top-Left PiP */
+@media (max-width: 767px) {
+    .remote-video-wrapper {
+        /* Fullscreen cover */
+    }
+
+    .remote-player {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: cover;
+    }
+
+    .local-video-wrapper {
+        width: 100px;
+        height: 133px;
+        /* 3:4 Aspect Ratio */
+        top: 16px;
+        left: 16px;
+        /* Bottom controls are safe */
+    }
+}
+
+/* DESKTOP (>= 768px): 16:9 Cinema Mode + Bottom-Right PiP */
+@media (min-width: 768px) {
+    .remote-video-wrapper {
+        width: 100%;
+        max-width: 1280px;
+        aspect-ratio: 16 / 9;
+        background-color: #000;
+    }
+
+    .remote-player {
+        width: 100% !important;
+        height: 100% !important;
+        object-fit: contain;
+        /* Don't crop on desktop */
+    }
+
+    .local-video-wrapper {
+        width: 240px;
+        height: 135px;
+        /* 16:9 Aspect Ratio */
+        bottom: 100px;
+        /* Above control bar */
+        right: 30px;
+    }
+}
