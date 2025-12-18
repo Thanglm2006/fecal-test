@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import { useJoin, usePublish, useRemoteUsers, RemoteUser } from "agora-rtc-react";
 import { PhoneOff, Mic, MicOff, Video, VideoOff } from "lucide-react";
 
@@ -7,153 +7,99 @@ export const VideoRoom = ({
   localCameraTrack, localMicrophoneTrack,
   micOn, setMicOn, cameraOn, setCameraOn
 }) => {
-
-  // --- 1. SETUP ---
-  // Ensure UID is a Number to prevent join errors
-  useJoin({ appid: appId, channel: channelName, token: token || null, uid: Number(uid) }, true);
+  // 1. Join and Publish
+  useJoin({ appid: appId, channel: channelName, token, uid }, true);
   usePublish([localMicrophoneTrack, localCameraTrack]);
 
   const remoteUsers = useRemoteUsers();
   const localVideoRef = useRef(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  // Handle Resize for responsive layout
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // --- 2. LOCAL VIDEO PLAYBACK ---
   useEffect(() => {
     if (localCameraTrack && localVideoRef.current && cameraOn) {
       localCameraTrack.play(localVideoRef.current);
     }
   }, [localCameraTrack, cameraOn]);
 
-  // --- 3. ACTIONS ---
   const toggleMic = async () => {
-    if (localMicrophoneTrack) {
-      await localMicrophoneTrack.setEnabled(!micOn);
-      setMicOn(!micOn);
-    }
+    await localMicrophoneTrack.setEnabled(!micOn);
+    setMicOn(!micOn);
   };
 
   const toggleCamera = async () => {
-    if (localCameraTrack) {
-      await localCameraTrack.setEnabled(!cameraOn);
-      setCameraOn(!cameraOn);
-      if (!cameraOn && localVideoRef.current) {
-        localCameraTrack.play(localVideoRef.current);
-      }
-    }
+    await localCameraTrack.setEnabled(!cameraOn);
+    setCameraOn(!cameraOn);
+    if (!cameraOn) localCameraTrack.play(localVideoRef.current);
   };
 
-  // --- 4. STYLES (INJECTED) ---
-  // We inject this style to FORCE Agora's video player to cover the container
-  const globalStyles = `
-    .agora_video_player {
-      object-fit: cover !important;
-      width: 100% !important;
-      height: 100% !important;
-      position: absolute !important;
-    }
-  `;
-
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100dvh',
-      backgroundColor: '#0f172a', zIndex: 9999, display: 'flex', flexDirection: 'column', overflow: 'hidden'
-    }}>
-      <style>{globalStyles}</style>
+    <div className="fixed inset-0 z-[9999] bg-black text-white flex flex-col h-[100dvh] w-full overflow-hidden">
 
-      {/* --- VIDEO AREA --- */}
-      <div style={{
-        flex: 1, display: 'flex',
-        flexDirection: isMobile ? 'column' : 'row',
-        position: 'relative'
-      }}>
+      {/* --- VIDEO GRID --- */}
+      <div className="flex-1 relative w-full h-full flex flex-col md:flex-row bg-gray-950">
 
-        {/* REMOTE USER SLOT */}
-        <div style={{
-          flex: 1, position: 'relative', overflow: 'hidden',
-          borderBottom: isMobile ? '1px solid #334155' : 'none',
-          borderRight: !isMobile ? '1px solid #334155' : 'none',
-          backgroundColor: '#1e293b'
-        }}>
+        {/* REMOTE USER SECTION */}
+        <div className="relative flex-1 border-b md:border-b-0 md:border-r border-white/10 overflow-hidden">
           {remoteUsers.length > 0 ? (
-            <div style={{ width: '100%', height: '100%', position: 'absolute' }}>
-              <RemoteUser user={remoteUsers[0]} style={{ width: '100%', height: '100%' }} />
-              <div style={{
-                position: 'absolute', bottom: 16, left: 16,
-                background: 'rgba(0,0,0,0.6)', color: 'white',
-                padding: '4px 12px', borderRadius: 20, fontSize: '12px', zIndex: 10
-              }}>
-                Opponent ({remoteUsers[0].uid})
+            <div className="absolute inset-0 w-full h-full">
+              <RemoteUser
+                user={remoteUsers[0]}
+                className="w-full h-full"
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div className="absolute bottom-4 left-4 z-20 bg-black/40 px-3 py-1 rounded-full text-sm backdrop-blur-md">
+                Đối phương
               </div>
             </div>
           ) : (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-              <div style={{ marginBottom: 10 }}>Waiting...</div>
-              <span style={{ fontSize: '12px' }}>Waiting for user to join</span>
+            <div className="absolute inset-0 flex flex-col items-center justify-center space-y-4">
+              <div className="w-20 h-20 bg-gray-800 rounded-full animate-pulse flex items-center justify-center">
+                <Video size={32} className="text-gray-600" />
+              </div>
+              <p className="text-gray-400 text-sm font-medium">Đang chờ đối phương tham gia...</p>
             </div>
           )}
         </div>
 
-        {/* LOCAL USER SLOT */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden', backgroundColor: '#000' }}>
-          <div
-            ref={localVideoRef}
-            style={{ width: '100%', height: '100%', transform: 'rotateY(180deg)' }}
-          />
-
+        {/* LOCAL USER SECTION */}
+        <div className="relative flex-1 overflow-hidden">
+          <div ref={localVideoRef} className="absolute inset-0 w-full h-full" style={{ transform: 'rotateY(180deg)' }} />
           {!cameraOn && (
-            <div style={{
-              position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center', backgroundColor: '#1e293b', color: '#94a3b8'
-            }}>
-              <VideoOff size={32} />
-              <div style={{ marginTop: 8, fontSize: '12px' }}>Camera Off</div>
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-gray-900">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-gray-800 rounded-full mx-auto flex items-center justify-center mb-2">
+                  <VideoOff className="text-gray-500" />
+                </div>
+                <p className="text-xs text-gray-500">Camera của bạn đang tắt</p>
+              </div>
             </div>
           )}
-
-          <div style={{
-            position: 'absolute', bottom: 16, left: 16,
-            background: 'rgba(0,0,0,0.6)', color: 'white',
-            padding: '4px 12px', borderRadius: 20, fontSize: '12px', zIndex: 10
-          }}>
-            You
+          <div className="absolute bottom-4 left-4 z-20 bg-black/40 px-3 py-1 rounded-full text-sm backdrop-blur-md">
+            Bạn {micOn ? '' : '(Tắt mic)'}
           </div>
         </div>
       </div>
 
       {/* --- CONTROLS --- */}
-      <div style={{
-        height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '30px',
-        backgroundColor: '#0f172a', borderTop: '1px solid #334155', paddingBottom: 'env(safe-area-inset-bottom)'
-      }}>
-        <button onClick={toggleMic} style={{
-          width: 50, height: 50, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backgroundColor: micOn ? '#334155' : '#ef4444', color: 'white'
-        }}>
-          {micOn ? <Mic /> : <MicOff />}
+      <div className="h-24 md:h-28 bg-gray-900/90 backdrop-blur-xl border-t border-white/5 flex items-center justify-center gap-6 md:gap-10 px-6 safe-area-bottom">
+        <button
+          onClick={toggleMic}
+          className={`p-4 md:p-5 rounded-full transition-all active:scale-90 ${micOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+        >
+          {micOn ? <Mic size={24} /> : <MicOff size={24} />}
         </button>
 
-        <button onClick={onLeave} style={{
-          width: 60, height: 60, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backgroundColor: '#dc2626', color: 'white', boxShadow: '0 4px 12px rgba(220,38,38,0.4)'
-        }}>
-          <PhoneOff size={28} />
+        <button
+          onClick={onLeave}
+          className="p-5 md:p-6 rounded-full bg-red-600 hover:bg-red-700 shadow-xl shadow-red-600/30 transition-all active:scale-95"
+        >
+          <PhoneOff size={32} fill="currentColor" />
         </button>
 
-        <button onClick={toggleCamera} style={{
-          width: 50, height: 50, borderRadius: '50%', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          backgroundColor: cameraOn ? '#334155' : '#ef4444', color: 'white'
-        }}>
-          {cameraOn ? <Video /> : <VideoOff />}
+        <button
+          onClick={toggleCamera}
+          className={`p-4 md:p-5 rounded-full transition-all active:scale-90 ${cameraOn ? 'bg-gray-800 hover:bg-gray-700' : 'bg-red-500 shadow-lg shadow-red-500/20'}`}
+        >
+          {cameraOn ? <Video size={24} /> : <VideoOff size={24} />}
         </button>
       </div>
     </div>

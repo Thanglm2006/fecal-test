@@ -1,241 +1,263 @@
 import { useEffect, useState, useRef } from 'react';
 import mqtt from 'mqtt';
 import axios from 'axios';
-import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft, Info, Mic, MicOff, Video, VideoOff } from 'lucide-react';
-import AgoraRTC from "agora-rtc-sdk-ng";
-import { AgoraRTCProvider } from "agora-rtc-react";
+import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft } from 'lucide-react'; // Import ArrowLeft
+
+// --- AGORA IMPORTS ---
+import AgoraRTC, { AgoraRTCProvider } from "agora-rtc-react";
 import { VideoRoom } from "./VideoRoom";
 
-// --- CONFIG ---
-const API_URL = 'http://localhost:8080/api';
-const MQTT_BROKER = 'ws://localhost:9001';
+const API_URL = 'https://api.job-fs.me/api';
+const MQTT_BROKER = 'wss://mqtt.job-fs.me';
 const AGORA_APP_ID = "b3631d59f31c43fab2da714ff9b9a79e";
 
 const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
 export default function Chat() {
-  const [currentUserId, setCurrentUserId] = useState(() => {
-    const u = localStorage.getItem('user');
-    return u ? JSON.parse(u).id : null;
-  });
+  const [currentUserId, setCurrentUserId] = useState(() => localStorage.getItem('userId'));
 
-  // Data States
   const [client, setClient] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [inputMsg, setInputMsg] = useState('');
 
-  // Call States
+  // --- STATE CHO VIDEO CALL ---
   const [isInCall, setIsInCall] = useState(false);
-  const [micOn, setMicOn] = useState(true);
-  const [cameraOn, setCameraOn] = useState(true);
-  const [localCameraTrack, setLocalCameraTrack] = useState(null);
-  const [localMicTrack, setLocalMicTrack] = useState(null);
-
-  // Layout State (For Responsive Mobile View)
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   const messagesEndRef = useRef(null);
 
-  // --- LAYOUT LISTENER ---
+  // --- 1. SETUP MQTT & CHAT ---
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    const token = localStorage.getItem('token');
+    if (!currentUserId || !token) {
+      window.location.href = '/login';
+      return;
+    }
 
-  // --- MQTT & DATA ---
-  const getRoomId = (u1, u2) => {
-    const ids = [String(u1), String(u2)].sort();
-    return `${ids[0]}-${ids[1]}`;
-  };
-
-  useEffect(() => {
-    if (!currentUserId) return;
     fetchInbox(currentUserId);
 
     const mqttClient = mqtt.connect(MQTT_BROKER, {
-      clientId: `web_${currentUserId}_${Math.random().toString(16).substr(2, 6)}`,
-      keepalive: 60, clean: true,
+      clientId: `web_${currentUserId}_${Math.random().toString(16).substring(2, 8)}`,
+      keepalive: 60,
+      clean: true,
     });
 
-    mqttClient.on('connect', () => mqttClient.subscribe(`/user/${currentUserId}/private`));
-    mqttClient.on('message', (t, p) => {
-      const d = JSON.parse(p.toString());
-      setMessages(prev => [...prev, mapMsg(d, currentUserId)]);
+    mqttClient.on('connect', () => {
+      console.log('✅ Connected to MQTT Broker');
+      mqttClient.subscribe(`/user/${currentUserId}/private`);
+    });
+
+    mqttClient.on('message', (topic, payload) => {
+      const data = JSON.parse(payload.toString());
+      if (topic.startsWith('/chat/')) {
+        setMessages((prev) => [...prev, mapMqttMessageToUI(data, currentUserId)]);
+      }
     });
 
     setClient(mqttClient);
-    return () => mqttClient.end();
+
+    return () => {
+      if (mqttClient) mqttClient.end();
+    };
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!selectedUser || !client) return;
-    const rid = getRoomId(currentUserId, selectedUser.userId);
-    client.subscribe(`/chat/${rid}`);
+    if (!selectedUser || !client || !currentUserId) return;
+    const roomId = getRoomId(currentUserId, selectedUser.userId);
+    const topic = `/chat/${roomId}`;
+
+    client.subscribe(topic);
     loadHistory(currentUserId, selectedUser.userId);
-    return () => client.unsubscribe(`/chat/${rid}`);
-  }, [selectedUser, client]);
 
-  useEffect(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
+    return () => {
+      client.unsubscribe(topic);
+    };
+  }, [selectedUser, client, currentUserId]);
 
-  const fetchInbox = async (id) => {
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // --- API CALLS ---
+  const fetchInbox = async (myId) => {
     try {
-      const res = await axios.get(`${API_URL}/chat/conversations?userId=${id}`, { headers: { token: localStorage.getItem('token') } });
-      setConversations(res.data);
-    } catch (e) { console.error(e); }
-  };
-
-  const loadHistory = async (u1, u2) => {
-    try {
-      const res = await axios.get(`${API_URL}/chat/messages`, {
-        params: { senderId: u1, receiverId: u2, page: 0 },
+      const res = await axios.get(`${API_URL}/chat/conversations?userId=${myId}`, {
         headers: { token: localStorage.getItem('token') }
       });
-      if (res.data.data) setMessages(res.data.data.map(m => mapMsg(m, u1)).reverse());
-    } catch { setMessages([]); }
+      setConversations(res.data);
+    } catch (error) { console.error("Lỗi load inbox:", error); }
   };
 
-  const mapMsg = (d, myId) => ({
-    message: d.content,
-    myMessage: String(d.sender) === String(myId),
-    timestamp: d.timestamp,
-    type: d.type,
-    fileUrl: d.type !== 'text' ? d.content : null
-  });
+  const loadHistory = async (senderId, receiverId) => {
+    try {
+      const res = await axios.get(`${API_URL}/chat/messages`, {
+        params: { senderId: senderId, receiverId: receiverId, page: 0 },
+        headers: { token: localStorage.getItem('token') }
+      });
 
-  const sendMessage = (type, content) => {
+      if (res.data.data && Array.isArray(res.data.data)) {
+        const uiMessages = res.data.data.map(apiMsg => ({
+          message: apiMsg.content,
+          myMessage: String(apiMsg.senderId || apiMsg.sender) === String(senderId) || apiMsg.sent === true,
+          fileUrl: apiMsg.fileUrl,
+          timestamp: apiMsg.timestamp,
+          type: apiMsg.type
+        }));
+        setMessages(uiMessages.reverse());
+      } else {
+        setMessages([]);
+      }
+    } catch (e) { console.error("Lỗi load history:", e); setMessages([]); }
+  };
+
+  const sendMessage = async (type = 'text', content) => {
     if (!content.trim() && type === 'text') return;
-    const rid = getRoomId(currentUserId, selectedUser.userId);
-    client.publish(`/chat/${rid}`, JSON.stringify({
+    if (!client || !selectedUser) return;
+
+    const payload = {
       token: localStorage.getItem('token'),
       sender: currentUserId,
       recipient: selectedUser.userId.toString(),
-      type, content, timestamp: new Date().toISOString()
-    }));
+      type: type,
+      content: content,
+      timestamp: new Date().toISOString()
+    };
+    const roomId = getRoomId(currentUserId, selectedUser.userId);
+    client.publish(`/chat/${roomId}`, JSON.stringify(payload));
     if (type === 'text') setInputMsg('');
   };
 
-  // --- CALL HANDLERS ---
-  const startCall = async () => {
-    try {
-      const [mic, cam] = await AgoraRTC.createMicrophoneAndCameraTracks();
-      setLocalMicTrack(mic);
-      setLocalCameraTrack(cam);
-      setIsInCall(true);
-    } catch (e) {
-      alert("Please allow Camera/Mic access");
-    }
+  const handleFileUpload = async (e) => {
+    // Logic upload ảnh giữ nguyên
+    const file = e.target.files[0];
+    if (!file) return;
+    alert("Tính năng upload ảnh cần backend API signature hoạt động.");
   };
 
-  const endCall = () => {
-    setIsInCall(false);
-    localCameraTrack?.close();
-    localMicTrack?.close();
-    setLocalCameraTrack(null);
-    setLocalMicTrack(null);
+  const handleStartCall = () => {
+    if (!selectedUser) return;
+    sendMessage('text', '📞 Đang bắt đầu cuộc gọi video...');
+    setIsInCall(true);
   };
 
-  // --- RENDER: VIDEO CALL ---
-  if (isInCall && selectedUser) {
-    return (
-      <AgoraRTCProvider client={agoraClient}>
-        <VideoRoom
-          appId={AGORA_APP_ID}
-          channelName={getRoomId(currentUserId, selectedUser.userId)}
-          token={null}
-          uid={currentUserId}
-          onLeave={endCall}
-          localCameraTrack={localCameraTrack}
-          localMicrophoneTrack={localMicTrack}
-          micOn={micOn} setMicOn={setMicOn}
-          cameraOn={cameraOn} setCameraOn={setCameraOn}
-        />
-      </AgoraRTCProvider>
-    );
-  }
+  const getRoomId = (uid1, uid2) => {
+    const id1 = String(uid1);
+    const id2 = String(uid2);
+    return id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
+  };
 
-  // --- RENDER: CHAT VIEW ---
-  // If Mobile and User Selected -> Show Chat Only
-  // If Mobile and No User -> Show List Only
-  // If Desktop -> Show Split Screen
-  const showList = !isMobile || (isMobile && !selectedUser);
-  const showChat = !isMobile || (isMobile && selectedUser);
+  const mapMqttMessageToUI = (mqttData, myId) => {
+    return {
+      message: mqttData.content,
+      myMessage: String(mqttData.sender) === String(myId),
+      timestamp: mqttData.timestamp,
+      type: mqttData.type,
+      fileUrl: (mqttData.type === 'image' || mqttData.type === 'Image') ? mqttData.content : null
+    };
+  };
 
+  const handleLogout = () => {
+    localStorage.clear();
+    window.location.href = '/login';
+  };
+
+  // --- MOBILE NAVIGATION HANDLER ---
+  const handleBackToList = () => {
+    setSelectedUser(null);
+  };
+
+  // --- RENDER ---
   return (
-    <div style={{ display: 'flex', height: '100dvh', width: '100vw', overflow: 'hidden', backgroundColor: 'white' }}>
+    <div className="flex h-[100dvh] bg-gray-100 relative overflow-hidden">
 
-      {/* SIDEBAR (User List) */}
-      <div style={{
-        display: showList ? 'flex' : 'none',
-        flexDirection: 'column',
-        width: isMobile ? '100%' : '350px',
-        borderRight: '1px solid #e5e7eb'
-      }}>
-        <div style={{ padding: '16px', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#2563eb', margin: 0 }}>Messages</h2>
-          <button onClick={() => { localStorage.clear(); window.location.href = '/login' }} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
-            <LogOut size={20} color="#64748b" />
-          </button>
+      {/* --- VIDEO CALL OVERLAY --- */}
+      {isInCall && selectedUser && (
+        <div className="absolute inset-0 z-[100]">
+          <AgoraRTCProvider client={agoraClient}>
+            <VideoRoom
+              appId={AGORA_APP_ID}
+              channelName={getRoomId(currentUserId, selectedUser.userId)}
+              token={null}
+              uid={currentUserId}
+              onLeave={() => setIsInCall(false)}
+            />
+          </AgoraRTCProvider>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {conversations.map(u => (
-            <div key={u.userId} onClick={() => setSelectedUser(u)} style={{
-              padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer',
-              backgroundColor: selectedUser?.userId === u.userId ? '#eff6ff' : 'transparent'
-            }}>
-              <img src={u.avatarUrl || "https://github.com/shadcn.png"} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} alt="" />
-              <div>
-                <div style={{ fontWeight: 600, color: '#1e293b' }}>{u.fullName}</div>
-                <div style={{ fontSize: '13px', color: '#64748b' }}>{u.lastMessage || 'Start chat'}</div>
+      )}
+
+      {/* SIDEBAR (LIST USER) 
+         - Mobile: Ẩn khi đã chọn user (`hidden` if selectedUser)
+         - Desktop: Luôn hiện (`md:flex`) và chiếm 1/4 (`md:w-1/4`)
+      */}
+      <div className={`w-full md:w-1/4 bg-white border-r flex-col ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
+        <div className="p-4 border-b bg-blue-600 text-white flex justify-between items-center">
+          <h2 className="font-bold text-lg">Tin nhắn</h2>
+          <button onClick={handleLogout}><LogOut size={20} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {conversations.map((user) => (
+            <div
+              key={user.userId}
+              onClick={() => setSelectedUser(user)}
+              className={`p-3 flex items-center cursor-pointer hover:bg-gray-100 border-b border-gray-100 ${selectedUser?.userId === user.userId ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
+            >
+              <img src={user.avatarUrl || 'https://via.placeholder.com/40'} className="w-12 h-12 rounded-full mr-3 object-cover" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold truncate text-gray-800">{user.fullName}</p>
+                <p className="text-sm truncate text-gray-500">{user.lastMessage || "Chưa có tin nhắn"}</p>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* CHAT AREA */}
-      <div style={{
-        display: showChat ? 'flex' : 'none',
-        flex: 1, flexDirection: 'column', backgroundColor: '#f8fafc'
-      }}>
+      {/* CHAT WINDOW 
+         - Mobile: Ẩn khi chưa chọn user (`hidden` if !selectedUser), hiện full (`w-full`) khi chọn.
+         - Desktop: Luôn hiện (`md:flex`) nhưng cần placeholder nếu chưa chọn user.
+      */}
+      <div className={`flex-1 flex flex-col bg-slate-50 h-full ${!selectedUser ? 'hidden md:flex' : 'flex'}`}>
         {selectedUser ? (
           <>
-            {/* Header */}
-            <div style={{
-              height: '64px', borderBottom: '1px solid #e5e7eb', backgroundColor: 'white',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                {isMobile && (
-                  <button onClick={() => setSelectedUser(null)} style={{ border: 'none', background: 'transparent' }}>
-                    <ArrowLeft size={24} />
-                  </button>
-                )}
-                <img src={selectedUser.avatarUrl || "https://github.com/shadcn.png"} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} alt="" />
-                <span style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedUser.fullName}</span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={startCall} style={{ border: 'none', background: '#eff6ff', padding: '8px', borderRadius: '50%', color: '#2563eb', cursor: 'pointer' }}>
-                  <VideoIcon size={20} />
+            {/* Header Chat */}
+            <div className="p-3 md:p-4 bg-white border-b flex items-center shadow-sm justify-between sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                {/* Back Button (Mobile Only) */}
+                <button onClick={handleBackToList} className="md:hidden text-gray-600 hover:bg-gray-100 p-1 rounded-full">
+                  <ArrowLeft size={24} />
                 </button>
+
+                <img src={selectedUser.avatarUrl || 'https://via.placeholder.com/40'} className="w-10 h-10 rounded-full object-cover" />
+                <div>
+                  <h3 className="font-bold text-gray-800 text-sm md:text-base">{selectedUser.fullName}</h3>
+                  <span className="text-[10px] md:text-xs text-green-500 flex items-center">● Đang hoạt động</span>
+                </div>
               </div>
+
+              {/* Button Video Call */}
+              <button
+                onClick={handleStartCall}
+                className="p-2 bg-blue-100 text-blue-600 rounded-full hover:bg-blue-200 transition"
+              >
+                <VideoIcon size={20} />
+              </button>
             </div>
 
-            {/* Messages */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {messages.map((m, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: m.myMessage ? 'flex-end' : 'flex-start' }}>
-                  <div style={{
-                    maxWidth: '75%', padding: '10px 14px', borderRadius: '16px',
-                    backgroundColor: m.myMessage ? '#2563eb' : 'white',
-                    color: m.myMessage ? 'white' : '#1e293b',
-                    border: m.myMessage ? 'none' : '1px solid #e2e8f0',
-                    borderTopRightRadius: m.myMessage ? 0 : 16,
-                    borderTopLeftRadius: m.myMessage ? 16 : 0
-                  }}>
-                    {m.type === 'text' ? m.message : <img src={m.fileUrl} style={{ maxWidth: '100%', borderRadius: 8 }} />}
+            {/* Message List */}
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-4" style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundRepeat: 'repeat' }}>
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.myMessage ? 'justify-end' : 'justify-start'}`}>
+                  {!msg.myMessage && <img src={selectedUser.avatarUrl} className="w-8 h-8 rounded-full mr-2 self-end mb-1 hidden md:block" />}
+
+                  <div className={`max-w-[75%] md:max-w-md p-3 shadow-md text-sm md:text-base ${msg.myMessage ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none'}`}>
+                    {(msg.type === 'Image' || msg.type === 'image') ? (
+                      <img src={msg.fileUrl || msg.message} className="rounded-lg max-h-60 cursor-pointer" onClick={() => window.open(msg.fileUrl, '_blank')} />
+                    ) : (
+                      <p className="break-words">{msg.message}</p>
+                    )}
+                    <span className="text-[10px] block text-right mt-1 opacity-70">
+                      {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
                   </div>
                 </div>
               ))}
@@ -243,28 +265,27 @@ export default function Chat() {
             </div>
 
             {/* Input */}
-            <div style={{ padding: '12px', borderTop: '1px solid #e5e7eb', backgroundColor: 'white' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '800px', margin: '0 auto' }}>
-                <ImageIcon size={24} color="#94a3b8" />
-                <input
-                  value={inputMsg}
-                  onChange={e => setInputMsg(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && sendMessage('text', inputMsg)}
-                  placeholder="Type a message..."
-                  style={{
-                    flex: 1, padding: '12px 16px', borderRadius: '24px', border: 'none',
-                    backgroundColor: '#f1f5f9', outline: 'none', fontSize: '16px'
-                  }}
-                />
-                <button onClick={() => sendMessage('text', inputMsg)} style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer' }}>
-                  <Send size={24} />
-                </button>
-              </div>
+            <div className="p-3 md:p-4 bg-white border-t flex items-center gap-2 md:gap-3 sticky bottom-0">
+              <label className="cursor-pointer p-2 hover:bg-gray-100 rounded-full text-blue-600">
+                <ImageIcon size={20} />
+                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
+              </label>
+              <input
+                type="text"
+                className="flex-1 border border-gray-300 rounded-full pl-4 pr-4 py-2 md:py-3 text-sm md:text-base focus:outline-none focus:border-blue-500"
+                placeholder="Nhập tin nhắn..."
+                value={inputMsg}
+                onKeyDown={(e) => e.key === 'Enter' && sendMessage('text', inputMsg)}
+                onChange={(e) => setInputMsg(e.target.value)}
+              />
+              <button onClick={() => sendMessage('text', inputMsg)} className="bg-blue-600 text-white p-2 md:p-3 rounded-full hover:bg-blue-700">
+                <Send size={18} />
+              </button>
             </div>
           </>
         ) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-            Select a conversation to start chatting
+          <div className="flex-1 flex items-center justify-center bg-gray-50 flex-col text-center text-gray-400 p-4">
+            <p>Chọn một người để bắt đầu trò chuyện</p>
           </div>
         )}
       </div>
