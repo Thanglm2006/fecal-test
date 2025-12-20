@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import mqtt from 'mqtt';
 import axios from 'axios';
-import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft } from 'lucide-react';
+import { Send, Image as ImageIcon, LogOut, Video as VideoIcon, ArrowLeft, Loader2 } from 'lucide-react';
 
 // --- AGORA IMPORTS ---
 import AgoraRTC, { AgoraRTCProvider } from "agora-rtc-react";
@@ -23,7 +23,8 @@ export default function Chat() {
   const [messages, setMessages] = useState([]);
   const [inputMsg, setInputMsg] = useState('');
 
-  // --- STATE FOR VIDEO INTERVIEW ---
+  // --- STATE FOR UPLOAD & VIDEO ---
+  const [isUploading, setIsUploading] = useState(false);
   const [isInCall, setIsInCall] = useState(false);
 
   const messagesEndRef = useRef(null);
@@ -137,34 +138,70 @@ export default function Chat() {
     if (type === 'text') setInputMsg('');
   };
 
+  // --- IMAGE UPLOAD LOGIC ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    alert("Upload feature needs backend API signature.");
+
+    setIsUploading(true);
+
+    try {
+      // 1. Get Signature from Backend
+      const token = localStorage.getItem('token');
+      const sigResponse = await axios.get(`${API_URL}/chat/signature`, {
+        headers: { token: token }
+      });
+
+      const { signature, timestamp, api_key, cloud_name, folder } = sigResponse.data;
+
+      // 2. Prepare Form Data for Cloudinary
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('api_key', api_key);
+      formData.append('timestamp', timestamp);
+      formData.append('signature', signature);
+      formData.append('folder', folder); // Must match the backend "messageIMGs"
+
+      // 3. Upload to Cloudinary
+      const uploadRes = await axios.post(
+        `https://api.cloudinary.com/v1_1/${cloud_name}/image/upload`,
+        formData
+      );
+
+      const imageUrl = uploadRes.data.secure_url;
+
+      // 4. Send Message via MQTT
+      if (imageUrl) {
+        sendMessage('image', imageUrl);
+      }
+
+    } catch (error) {
+      console.error("Upload failed:", error);
+      alert("Failed to upload image. Please try again.");
+    } finally {
+      setIsUploading(false);
+      // Reset input value to allow selecting same file again if needed
+      e.target.value = '';
+    }
   };
 
   // --- INTERVIEW HANDLERS ---
   const handleStartCall = () => {
     if (!selectedUser) return;
-
-    // 1. Inject System Message: Start
     const sysMsg = {
       message: "📞 Cuộc phỏng vấn đã bắt đầu",
-      myMessage: true, // Right side
+      myMessage: true,
       timestamp: new Date().toISOString(),
       type: 'system'
     };
     setMessages(prev => [...prev, sysMsg]);
-
     setIsInCall(true);
   };
 
-  // Callback passed to VideoRoom to detect when peer joins
   const handleRemoteJoined = () => {
-    // 2. Inject System Message: Remote Joined
     const sysMsg = {
       message: "👤 Đã tham gia vào cuộc phỏng vấn",
-      myMessage: false, // Left side
+      myMessage: false,
       timestamp: new Date().toISOString(),
       type: 'system'
     };
@@ -172,12 +209,16 @@ export default function Chat() {
   };
 
   const mapMqttMessageToUI = (mqttData, myId) => {
+    // Check both standard 'image' and capitalized 'Image' if API varies
+    const isImage = mqttData.type === 'image' || mqttData.type === 'Image';
+
     return {
       message: mqttData.content,
       myMessage: String(mqttData.sender) === String(myId),
       timestamp: mqttData.timestamp,
       type: mqttData.type,
-      fileUrl: (mqttData.type === 'image' || mqttData.type === 'Image') ? mqttData.content : null
+      // If type is image, content is the URL. If apiMsg has fileUrl separately, handle that too
+      fileUrl: isImage ? mqttData.content : null
     };
   };
 
@@ -281,7 +322,6 @@ export default function Chat() {
             >
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.myMessage ? 'justify-end' : 'justify-start'}`}>
-                  {/* Handle System Messages */}
                   {msg.type === 'system' ? (
                     <div className="w-full text-center my-2">
                       <span className="bg-gray-200 text-gray-600 text-xs py-1 px-3 rounded-full">
@@ -290,8 +330,14 @@ export default function Chat() {
                     </div>
                   ) : (
                     <div className={`max-w-[75%] md:max-w-md p-3 shadow-md text-sm md:text-base ${msg.myMessage ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none'}`}>
-                      {msg.fileUrl ? (
-                        <img src={msg.fileUrl} alt="Sent file" className="rounded-lg max-w-full" />
+                      {/* Check if msg.fileUrl exists OR if message type implies an image and the message content is a URL */}
+                      {(msg.fileUrl || (msg.type === 'image' && msg.message.startsWith('http'))) ? (
+                        <img
+                          src={msg.fileUrl || msg.message}
+                          alt="Sent file"
+                          className="rounded-lg max-w-full"
+                          style={{ maxHeight: '300px' }}
+                        />
                       ) : (
                         msg.message
                       )}
@@ -307,9 +353,21 @@ export default function Chat() {
               className="p-3 md:p-4 bg-white border-t flex items-center gap-2 md:gap-3 flex-shrink-0"
               style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
             >
-              <label className="cursor-pointer p-2 hover:bg-gray-100 rounded-full text-blue-600 transition-colors flex-shrink-0">
-                <ImageIcon size={20} />
-                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
+              <label className={`cursor-pointer p-2 hover:bg-gray-100 rounded-full text-blue-600 transition-colors flex-shrink-0 ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                {isUploading ? (
+                  <Loader2 size={20} className="animate-spin" />
+                ) : (
+                  <>
+                    <ImageIcon size={20} />
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={handleFileUpload}
+                      disabled={isUploading}
+                    />
+                  </>
+                )}
               </label>
               <input
                 type="text"
